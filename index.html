@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     body {
       font-family: 'Yu Gothic', 'Meiryo', sans-serif;
@@ -24,15 +25,20 @@
     }
     textarea {
       width: 100%;
-      min-height: 60px;
+      min-height: 80px;
       font-size: 1em;
       padding: 0.7em;
       border-radius: 8px;
       border: 1px solid #bbb;
       resize: vertical;
-      margin-bottom: 1.2em;
+      margin-bottom: 0.8em;
       font-family: 'Yu Gothic', 'Meiryo', sans-serif;
       background: #fcfcfe;
+    }
+    .options {
+      margin-bottom: 1.2em;
+      font-size: 0.95em;
+      color: #444;
     }
     #preview {
       min-height: 2em;
@@ -42,20 +48,31 @@
       margin-bottom: 1.2em;
       word-break: break-all;
     }
-    label {
+    label.title {
       font-size: 1em;
       color: #444;
       margin-bottom: 0.4em;
       display: inline-block;
+      font-weight: bold;
     }
+    /* Markdown用のスタイル調整 */
+    #preview p { margin-top: 0; }
+    #preview p:last-child { margin-bottom: 0; }
   </style>
 </head>
 <body>
   <div class="content">
-    <label for="userinput">【数式・テキストを入力】</label><br>
+    <label for="userinput" class="title">【数式・テキストを入力】</label><br>
     <textarea id="userinput" placeholder="ここにテキストや数式を入力（例: $e^{ix} = \cos x + i\sin x$）"></textarea>
+    
+    <div class="options">
+      <input type="checkbox" id="enable-markdown" checked>
+      <label for="enable-markdown">Markdownとしてプレビューする</label>
+    </div>
+
     <div id="preview"></div>
   </div>
+
   <script>
     function renderMath(target) {
       if (window.renderMathInElement) {
@@ -68,17 +85,57 @@
         });
       }
     }
+
     const input = document.getElementById('userinput');
     const preview = document.getElementById('preview');
-    input.addEventListener('input', () => {
-      // 改行を<br>に変換
-      const escaped = input.value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      preview.innerHTML = escaped.replace(/\n/g, "<br>");
+    const enableMdCheckbox = document.getElementById('enable-markdown');
+
+    // Markdownと数式を共存させるための安全なパース処理
+    function parseMarkdownWithMath(text) {
+      const mathBlocks = [];
+      
+      // 1. 数式ブロック ($$...$$, $...$, \[...\]) を一時的な文字列に置換して退避
+      // これにより、Markdownのパース（_による斜体化など）で数式が破壊されるのを防ぎます
+      let processedText = text.replace(/(\$\$[\s\S]+?\$\$|\$(?:\\.|[^$])+?\$|\\\[[\s\S]+?\\\])/g, (match) => {
+        mathBlocks.push(match);
+        return `%%%MATH_BLOCK_${mathBlocks.length - 1}%%%`;
+      });
+
+      // 2. 退避した状態でMarkdownをパース（改行を反映させるオプションを付与）
+      marked.setOptions({ breaks: true });
+      let html = marked.parse(processedText);
+
+      // 3. 退避していた数式を元の場所に戻す
+      html = html.replace(/%%%MATH_BLOCK_(\d+)%%%/g, (match, index) => {
+        return mathBlocks[index];
+      });
+
+      return html;
+    }
+
+    function updatePreview() {
+      const rawText = input.value;
+
+      if (enableMdCheckbox.checked) {
+        // Markdownオンの場合
+        preview.innerHTML = parseMarkdownWithMath(rawText);
+      } else {
+        // Markdownオフの場合（以前の動作: エスケープ＋改行置換）
+        const escaped = rawText
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        preview.innerHTML = escaped.replace(/\n/g, "<br>");
+      }
+
+      // 最後にKaTeXで数式をレンダリング
       renderMath(preview);
-    });
+    }
+
+    // 入力時およびチェックボックス切り替え時にプレビューを更新
+    input.addEventListener('input', updatePreview);
+    enableMdCheckbox.addEventListener('change', updatePreview);
+
     // 初期化
     preview.innerHTML = '';
   </script>
